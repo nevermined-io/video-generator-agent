@@ -1,0 +1,45 @@
+{
+  "compilerOptions": {
+    "strict": true,
+    "isolatedModules": true,
+    "useDefineForClassFields": true,
+
+    "noUnusedLocals": true, // Not enabled by default in `strict` mode.
+    "noUnusedParameters": true, // Not enabled by default in `strict` mode.
+    "allowJs": false,
+    "checkJs": false,
+
+    "strictPropertyInitialization": false,
+    "strictNullChecks": true,
+    "useUnknownInCatchVariables": false,
+    "resolveJsonModule": true,
+
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "allowSyntheticDefaultImports": true,
+    "lib": ["ES2022", "ES2021", "ES2021.String", "DOM"],
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "moduleResolution": "node",
+    "module": "CommonJS",
+
+    "target": "ES2022",
+    "noImplicitAny": false,
+    "removeComments": true,
+    "experimentalDecorators": true,
+    "preserveConstEnums": true,
+    "outDir": "./dist",
+    //"rootDir": "./src/",
+    // "baseUrl": "./",
+    "typeRoots": ["node_modules/@types"],
+    "paths": {
+      "@/": ["./src/"],
+    },
+    
+  },
+  "include": [
+    "src/**/*",    
+  ],
+  "exclude": ["node_modules", "test/**/*"]
+}
