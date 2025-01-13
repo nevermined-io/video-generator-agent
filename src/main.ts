@@ -47,6 +47,7 @@ async function run(data: any) {
 
     try {
       // Generate the video using the text2video function
+      //const videoUrl = await text2video(step.input_query);
       const videoUrl = await text2video(step.input_query);
 
       // Log the video URL

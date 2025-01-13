@@ -49,6 +49,13 @@ export const text2video = async (text: string): Promise<string> => {
   }
 };
 
+export const text2videoDummy = async (text: string): Promise<string> => {
+  //creates a video url from the text. Example:
+  // text: "male character walking in the park"
+  // video url: "https://example.com/male-character-walking-in-the-park.mp4"
+  return `https://example.com/${text.replace(/ /g, "-")}.mp4`;
+};
+
 /**
  * Creates a video generation task.
  *
