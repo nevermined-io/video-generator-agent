@@ -280,5 +280,3 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 ```
-
-Este `README.md` ahora incluye detalles claros sobre los archivos `config/env.ts` y `logger/logger.ts`, explicando cómo funcionan y su propósito en el proyecto.
