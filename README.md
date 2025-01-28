@@ -1,7 +1,3 @@
-Aquí tienes el `README.md` actualizado para reflejar la existencia y el propósito de los archivos `config/env.ts` y `logger/logger.ts`:
-
-* * *
-
 [![banner](https://raw.githubusercontent.com/nevermined-io/assets/main/images/logo/banner_logo.png)](https://nevermined.io)
 
 Video Generator Agent using Nevermined's Payments API (Node.js)
