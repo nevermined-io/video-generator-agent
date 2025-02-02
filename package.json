@@ -13,6 +13,7 @@
   "license": "ISC",
   "dependencies": {
     "@edenlabs/eden-sdk": "^0.4.3",
+    "@fal-ai/client": "^1.2.3",
     "@nevermined-io/payments": "^0.8.0",
     "dotenv": "^16.4.7",
     "pino": "^9.6.0",
