@@ -1,133 +1,160 @@
 /**
  * @file videoGeneration.ts
- * @description Provides functions to generate videos using the RunwayML API (Text2Video).
+ * @description Provides functions to generate videos using the PiAPI (Text2Video).
  */
 
 import axios from "axios";
-import { RUNWAY_API_KEY } from "./config/env";
+import { PIAPI_KEY } from "./config/env";
+import pino from "pino";
+import pretty from "pino-pretty";
+
+// Initialize logger
+const logger = pino(pretty({ sync: true }));
 
 /**
- * Creates a video generation request on RunwayML.
+ * Creates a video generation task on PiAPI.
  *
- * @param prompt {string} - The text prompt for video generation.
- * @param imageUrl {string} - The URL of the image to be used as a reference.
- * @returns {Promise<any>} - Information about the created job, including jobId, status, etc.
+ * @param prompt - The text prompt for video generation.
+ * @param imageUrls - List of image URLs to be used as reference.
+ * @returns {Promise<any>} - Information about the created task, including task_id, status, etc.
  */
-async function createVideoTask(prompt: string, imageUrl: string): Promise<any> {
+async function createVideoTask(
+  prompt: string,
+  imageUrls: string[],
+  duration: number = 5
+): Promise<any> {
+  if ([5, 10].includes(duration) === false) {
+    duration = 10;
+  }
   const payload = {
-    model: "gen3a_turbo",
-    promptImage: imageUrl,
-    promptText: prompt,
-    duration: 5,
+    model: "kling",
+    task_type: "video_generation",
+    input: {
+      prompt: prompt,
+      negative_prompt: "",
+      duration,
+      elements: imageUrls.map((url) => ({ image_url: url })),
+      mode: "std",
+      aspect_ratio: "16:9",
+      version: "1.6",
+    },
+    config: {
+      service_mode: "public",
+      webhook_config: {
+        endpoint: "",
+        secret: "",
+      },
+    },
   };
 
   try {
     const response = await axios.post(
-      "https://api.dev.runwayml.com/v1/image_to_video",
+      "https://api.piapi.ai/api/v1/task",
       payload,
       {
         headers: {
-          Authorization: `Bearer ${RUNWAY_API_KEY}`,
+          "x-api-key": PIAPI_KEY,
           "Content-Type": "application/json",
-          "X-Runway-Version": "2024-11-06",
         },
       }
     );
-
     return response.data;
   } catch (error) {
-    console.error("Error creating Runway task:", error);
+    console.error("Error creating PiAPI task:", error);
     throw error;
   }
 }
 
 /**
- * Polls RunwayML for task completion, taking into account various status codes.
+ * Polls PiAPI until the task is completed.
  *
  * Possible statuses:
- * - "SUCCEEDED": Returns the final job details (video URL is available).
- * - "FAILED" or "CANCELLED": Aborts the operation.
- * - "RUNNING", "PENDING", "THROTTLED": Continue polling.
+ * - "completed": The task is finished and the video URL is available.
+ * - "failed" or "cancelled": Aborts the operation.
+ * - Other statuses: Continues polling.
  *
- * @param jobId {string} - The ID of the RunwayML job.
- * @returns {Promise<any>} - The completed job details, including the final video URL.
+ * @param taskId - The task ID in PiAPI.
+ * @returns {Promise<any>} - The final task details, including the generated video.
  */
-async function waitForTaskCompletion(jobId: string): Promise<any> {
+async function waitForTaskCompletion(taskId: string): Promise<any> {
   while (true) {
     await new Promise((resolve) => setTimeout(resolve, 5000));
-    const job = await getTask(jobId);
+    const task = await getTask(taskId);
 
-    if (job.status === "SUCCEEDED") {
-      return job;
-    } else if (job.status === "FAILED" || job.status === "CANCELLED") {
-      throw new Error(
-        `Task ${job.status}: Job ${jobId} has failed or was cancelled.`
-      );
+    if (task.data.status === "completed") {
+      return task.data;
     } else if (
-      job.status === "RUNNING" ||
-      job.status === "PENDING" ||
-      job.status === "THROTTLED"
+      task.data.status === "failed" ||
+      task.data.status === "cancelled"
     ) {
-      // Continue polling without interfering in the progress.
-      console.log(`Job is ${job.status}. Waiting...`);
+      throw new Error(
+        `Task ${task.data.status}: Task ${taskId} has failed or was cancelled.`
+      );
     } else {
-      console.warn(`Unexpected job status: ${job.status}. Continuing to poll.`);
+      logger.info(`${taskId}: Task status "${task.data.status}". Waiting...`);
     }
   }
 }
 
 /**
- * Fetches the status of a RunwayML job.
+ * Fetches the status of a PiAPI task.
  *
- * @param jobId {string} - The ID of the job.
- * @returns {Promise<any>} - The job detail object from RunwayML.
+ * @param taskId - The task ID.
+ * @returns {Promise<any>} - The task details.
  */
-async function getTask(jobId: string): Promise<any> {
+async function getTask(taskId: string): Promise<any> {
   try {
     const response = await axios.get(
-      `https://api.dev.runwayml.com/v1/tasks/${jobId}`,
+      `https://api.piapi.ai/api/v1/task/${taskId}`,
       {
         headers: {
-          Authorization: `Bearer ${RUNWAY_API_KEY}`,
-          "X-Runway-Version": "2024-11-06",
+          "x-api-key": PIAPI_KEY,
         },
       }
     );
     return response.data;
   } catch (error) {
-    console.error("Error fetching Runway task:", error);
+    console.error("Error fetching PiAPI task:", error);
     throw error;
   }
 }
 
 /**
- * Main function to generate a video from a text prompt and an image using RunwayML.
+ * Main function to generate a video from a text prompt and a list of images using PiAPI.
  *
- * @param imageUrl {string} - The URL of the reference image.
- * @param prompt {string} - The text description for video generation.
+ * @param imageUrls - List of reference image URLs.
+ * @param prompt - The text description for video generation.
  * @returns {Promise<string>} - The URL of the generated video.
  */
 export async function text2video(
-  imageUrl: string,
-  prompt: string
+  imageUrls: string[],
+  prompt: string,
+  duration: number = 5
 ): Promise<string> {
   try {
-    // 1) Create a job by sending the prompt and image URL.
-    const result = await createVideoTask(prompt, imageUrl);
+    // 1) Create a task by sending the prompt and the image URLs.
+    const result = await createVideoTask(prompt, imageUrls, duration);
 
-    // If RunwayML works asynchronously and returns a job id, poll for completion:
-    if (result?.id) {
-      // 2) Wait for the job to complete, considering all possible statuses.
-      const finalJob = await waitForTaskCompletion(result.id);
-      // Extract and return the final video URL (assuming it's in finalJob.videoUrl).
-      return finalJob.output[0];
+    // If PiAPI works asynchronously and returns a task_id, poll for completion:
+    if (result?.data?.task_id) {
+      // 2) Wait for the task to complete.
+      const finalTask = await waitForTaskCompletion(result.data.task_id);
+      // Extract and return the video URL (assuming it is located in finalTask.output.works[0].video)
+      if (
+        finalTask.output &&
+        finalTask.output.works &&
+        finalTask.output.works.length > 0
+      ) {
+        const video = finalTask.output.works[0].video;
+        return video.resource_without_watermark || video.resource;
+      } else {
+        throw new Error("Video URL not found in the final response.");
+      }
     } else {
-      // If the response returns the video immediately (synchronous),
-      // simply return the video URL.
-      return result.output[0] || "No video URL returned";
+      throw new Error("task_id not received from PiAPI.");
     }
   } catch (error) {
-    console.error("Error in text2video:", error);
+    logger.error(`Error in text2video: ${JSON.stringify(error)}`);
     throw error;
   }
 }

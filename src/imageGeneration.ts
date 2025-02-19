@@ -6,6 +6,7 @@
 import { fal } from "@fal-ai/client";
 //@ts-ignore
 import { FAL_KEY } from "./config/env";
+import { logger } from "./logger/logger";
 
 /**
  * Generates an image from a text prompt using the Fal.ai API.
@@ -16,6 +17,7 @@ import { FAL_KEY } from "./config/env";
  */
 export async function text2image(prompt: string): Promise<string> {
   try {
+    logger.info(`Generating image with text2image: ${prompt}`);
     const result = await fal.subscribe("fal-ai/flux/schnell", {
       input: {
         prompt: prompt,
