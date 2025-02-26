@@ -164,6 +164,7 @@ export async function handleText2video(
       url = await text2videoDummy(inputs.images[0], step.input_query);
     } else {
       url = await text2video(inputs.images, step.input_query, inputs.duration);
+      //url = await text2videoDummy(inputs.images, step.input_query);
     }
     logger.info(`Generated video URL: ${url}`);
     return url;

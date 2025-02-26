@@ -32,6 +32,10 @@ async function run(data: any) {
       return;
     }
 
+    if (step.input_params == "{}") {
+      step.input_params = '[{"inference_type":"text2video"}]';
+    }
+
     const [{ inference_type: inferenceType, ...inputs }] = JSON.parse(
       step.input_params
     );
@@ -60,10 +64,22 @@ async function run(data: any) {
 
     const outputUrl = await handler(inputs, step, payments);
 
+    let cost = 0;
+    switch (inferenceType) {
+      case "text2image":
+      case "image2image":
+        cost = 1;
+        break;
+      case "text2video":
+        cost = 5;
+        break;
+    }
+
     await payments.query.updateStep(step.did, {
       ...step,
       step_status: AgentExecutionStatus.Completed,
       is_last: true,
+      cost,
       output: "Generation completed successfully.",
       output_artifacts: [outputUrl],
     });
