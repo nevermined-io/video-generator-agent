@@ -12,13 +12,13 @@ Video Generator Agent using Nevermined's Payments API (Node.js)
 
 This **Video Generator Agent** is part of a larger ecosystem of AI-driven media creation. For a complete view of how multiple agents work together, see:
 
-1.  [Music Orchestrator Agent](https://github.com/nevermined-io/music-video-orchestrator)
+1.  [Music Video Orchestrator Agent](https://github.com/nevermined-io/music-video-orchestrator)
     
     *   Coordinates end-to-end workflows: collects user prompts, splits them into tasks, pays agents in multiple tokens, merges final output.
 2.  [Song Generator Agent](https://github.com/nevermined-io/song-generation-agent)
     
     *   Produces lyrics, titles, and final audio tracks using LangChain + OpenAI and a chosen music generation API.
-3.  [Script Generator Agent](https://github.com/nevermined-io/music-video-script-generator-agent)
+3.  [Movie Script Generator Agent](https://github.com/nevermined-io/movie-script-generator-agent)
     
     *   Generates cinematic scripts, extracts scene info, identifies settings and characters, producing prompts for video generation.
 
