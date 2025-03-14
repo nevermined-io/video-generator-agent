@@ -32,19 +32,17 @@ async function run(data: any) {
       return;
     }
 
-    if (step.input_params == "{}") {
-      step.input_params = '[{"inference_type":"text2video"}]';
+    if (!step.input_artifacts.length) {
+      step.input_artifacts = [{ inference_type: "text2video" }];
     }
 
-    const [{ inference_type: inferenceType, ...inputs }] = JSON.parse(
-      step.input_params
-    );
+    const [{ inference_type: inferenceType, ...inputs }] = step.input_artifacts;
 
     if (!inferenceType) {
       await payments.query.updateStep(step.did, {
         ...step,
         step_status: AgentExecutionStatus.Failed,
-        output: `Missing inference type in input_params: ${step.input_params[0]}`,
+        output: `Missing inference type in input_artifacts: ${step.input_artifacts[0]}`,
       });
       return;
     }
@@ -58,7 +56,7 @@ async function run(data: any) {
     const handler = handlers[inferenceType];
     if (!handler) {
       throw new Error(
-        `Unknown inference type in input_params: ${step.input_params[0]}`
+        `Unknown inference type in input_artifacts: ${step.input_artifacts[0]}`
       );
     }
 

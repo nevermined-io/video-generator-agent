@@ -70,7 +70,7 @@ export async function text2videoDummy(
     throw new Error("Dummy video generation failed due to random error.");
   }
 
-  return "https://storage.theapi.app/videos/279628929.mp4";
+  return "https://storage.theapi.app/videos/273847678503198.mp4";
 }
 
 /* Handlers for Production and Dummy Modes */
