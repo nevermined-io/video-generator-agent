@@ -66,11 +66,27 @@ export async function text2videoDummy(
   await new Promise((resolve) => setTimeout(resolve, waitTime * 1000));
 
   // Introduce a 20% chance of throwing an error
-  if (Math.random() < 0.1) {
+  if (Math.random() < 0.2) {
     throw new Error("Dummy video generation failed due to random error.");
   }
 
-  return "https://storage.theapi.app/videos/273847678503198.mp4";
+  const videoUrls = [
+    "https://storage.theapi.app/videos/273935556507167.mp4",
+    "https://storage.theapi.app/videos/273935557525856.mp4",
+    "https://storage.theapi.app/videos/273935562300829.mp4",
+    "https://storage.theapi.app/videos/273935569503557.mp4",
+    "https://storage.theapi.app/videos/273935555524166.mp4",
+    "https://storage.theapi.app/videos/273935569520729.mp4",
+    "https://storage.theapi.app/videos/273935556503628.mp4",
+    "https://storage.theapi.app/videos/273935560508066.mp4",
+    "https://storage.theapi.app/videos/273935557502341.mp4",
+    "https://storage.theapi.app/videos/273935569522194.mp4",
+    "https://storage.theapi.app/videos/273935579318185.mp4",
+    "https://storage.theapi.app/videos/273935554314876.mp4",
+    "https://storage.theapi.app/videos/273935567520575.mp4",
+  ];
+
+  return videoUrls[Math.floor(Math.random() * videoUrls.length)];
 }
 
 /* Handlers for Production and Dummy Modes */
