@@ -11,12 +11,43 @@ import { logger } from "./logger/logger";
 
 /* Dummy Functions */
 
+const DUMMY_IMAGE_URLS = {
+  "character-0":
+    "https://v3.fal.media/files/kangaroo/OyJfXujVSXxPby1bjYe--.png",
+  "character-1": "https://v3.fal.media/files/rabbit/iGjlnk6hZqq5LPtOOSdiu.png",
+  "character-2": "https://v3.fal.media/files/lion/sGrK0XLGX-V2-LOCMN6aW.png",
+  "character-3": "https://v3.fal.media/files/panda/VytitIH7qWYfrXzLvITxi.png",
+  "character-4": "https://v3.fal.media/files/panda/XJb6IFiXFUxxWvn6tyDBl.png",
+  "setting-0": "https://v3.fal.media/files/zebra/7sNOX9UH0mLjndayQsIYw.png",
+  "setting-1": "https://v3.fal.media/files/lion/Y5MynHlT3LFGUf-BrD6Dd.png",
+  "setting-2": "https://v3.fal.media/files/rabbit/EmyU04RwnZGlODQt9z9WZ.png",
+  "setting-3": "https://v3.fal.media/files/lion/MGo2-UMageJnhAs50-3Pa.png",
+  "setting-4": "https://v3.fal.media/files/rabbit/gbGJR2YeyWHslDoMaOZmN.png",
+  "setting-5": "https://v3.fal.media/files/zebra/VoFFGllug4MWVJ7g--6L-.png",
+};
+
+const DUMMY_VIDEO_URLS = [
+  "https://storage.theapi.app/videos/280932703321329.mp4",
+  "https://storage.theapi.app/videos/280932707525755.mp4",
+  "https://storage.theapi.app/videos/280932715532587.mp4",
+  "https://storage.theapi.app/videos/280932707525334.mp4",
+  "https://storage.theapi.app/videos/280932702520982.mp4",
+  "https://storage.theapi.app/videos/280932713322678.mp4",
+  "https://storage.theapi.app/videos/280932715531291.mp4",
+  "https://storage.theapi.app/videos/280932716533171.mp4",
+  "https://storage.theapi.app/videos/280932703538981.mp4",
+];
+
 /**
  * Dummy implementation for text-to-image generation.
  * @param prompt - The text prompt for image generation.
+ * @param id - The ID of the image.
  * @returns {Promise<string>} - A dummy image URL.
  */
-export async function text2imageDummy(_prompt: string): Promise<string> {
+export async function text2imageDummy(
+  _prompt: string,
+  id: string
+): Promise<string> {
   const waitTime = Math.floor(Math.random() * 10) + 1;
   await new Promise((resolve) => setTimeout(resolve, waitTime * 1000));
 
@@ -25,7 +56,10 @@ export async function text2imageDummy(_prompt: string): Promise<string> {
     throw new Error("Dummy image generation failed due to random error.");
   }
 
-  return "https://cdnc.ttapi.io/2025-02-02/50b8d4da-59d1-42ea-85eb-1c874ca96cc8.png";
+  return (
+    DUMMY_IMAGE_URLS[id] ??
+    "https://cdnc.ttapi.io/2025-02-02/50b8d4da-59d1-42ea-85eb-1c874ca96cc8.png"
+  );
 }
 
 /**
@@ -56,11 +90,13 @@ export async function image2imageDummy(
  * Uses the first image from the array.
  * @param imageUrl - The reference image URL.
  * @param videoPrompt - The text prompt for video generation.
+ * @param id - The ID of the video.
  * @returns {Promise<string>} - A dummy video URL.
  */
 export async function text2videoDummy(
   _imageUrl: string,
-  _videoPrompt: string
+  _videoPrompt: string,
+  id: string
 ): Promise<string> {
   const waitTime = Math.floor(Math.random() * 10) + 1;
   await new Promise((resolve) => setTimeout(resolve, waitTime * 1000));
@@ -70,9 +106,11 @@ export async function text2videoDummy(
     throw new Error("Dummy video generation failed due to random error.");
   }
 
-  const videoUrls = ["https://download.samplelib.com/mp4/sample-10s.mp4"];
-
-  return videoUrls[Math.floor(Math.random() * videoUrls.length)];
+  return (
+    DUMMY_VIDEO_URLS[Number(id)] ??
+    DUMMY_VIDEO_URLS[Math.floor(Math.random() * DUMMY_VIDEO_URLS.length)] ??
+    "https://download.samplelib.com/mp4/sample-10s.mp4"
+  );
 }
 
 /* Handlers for Production and Dummy Modes */
@@ -94,7 +132,7 @@ export async function handleText2image(
   try {
     let url: string;
     if (IS_DUMMY) {
-      url = await text2imageDummy(step.input_query);
+      url = await text2imageDummy(step.input_query, step.input_artifacts[0].id);
     } else {
       url = await text2image(step.input_query);
     }
@@ -163,7 +201,11 @@ export async function handleText2video(
   try {
     let url: string;
     if (IS_DUMMY) {
-      url = await text2videoDummy(inputs.images[0], step.input_query);
+      url = await text2videoDummy(
+        inputs.images[0],
+        step.input_query,
+        step.input_artifacts[0].id
+      );
     } else {
       url = await text2video(inputs.images, step.input_query, inputs.duration);
       //url = await text2videoDummy(inputs.images, step.input_query);
