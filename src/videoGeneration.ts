@@ -7,6 +7,9 @@ import axios from "axios";
 import { PIAPI_KEY } from "./config/env";
 import pino from "pino";
 import pretty from "pino-pretty";
+import { HeliconeManualLogger } from "@helicone/helpers";
+import { HELICONE_API_KEY } from "./config/env";
+import { generateDeterministicAgentId, generateSessionId, logSessionInfo } from "./utils/utils";
 
 // Initialize logger
 const logger = pino(pretty({ sync: true }));
@@ -157,4 +160,80 @@ export async function text2video(
     logger.error(`Error in text2video: ${JSON.stringify(error)}`);
     throw error;
   }
+}
+
+/**
+ * Dummy implementation for text-to-video generation.
+ * Uses the first image from the array.
+ * @param imageUrl - The reference image URL.
+ * @param videoPrompt - The text prompt for video generation.
+ * @param id - The ID of the video.
+ * @returns {Promise<string>} - A dummy video URL.
+ */
+export async function text2videoDummy(
+  _imageUrl: string,
+  _videoPrompt: string,
+  id: string
+): Promise<string> {
+  const DUMMY_VIDEO_URLS = [
+    "https://download.samplelib.com/mp4/sample-5s.mp4",
+    "https://download.samplelib.com/mp4/sample-5s.mp4",
+    "https://download.samplelib.com/mp4/sample-5s.mp4",
+    "https://download.samplelib.com/mp4/sample-5s.mp4",
+    "https://download.samplelib.com/mp4/sample-5s.mp4",
+    "https://download.samplelib.com/mp4/sample-5s.mp4",
+    "https://download.samplelib.com/mp4/sample-5s.mp4",
+    "https://download.samplelib.com/mp4/sample-5s.mp4",
+    "https://download.samplelib.com/mp4/sample-5s.mp4",
+  ];
+  const agentId = generateDeterministicAgentId();
+  const sessionId = generateSessionId();
+  logSessionInfo(agentId, sessionId, 'VideoGeneratorAgent');
+  const heliconeLogger = new HeliconeManualLogger({
+    apiKey: HELICONE_API_KEY,
+    headers: {
+      "Helicone-Property-AgentId": agentId,
+      "Helicone-Property-SessionId": sessionId,
+    },
+  });
+  const heliconePayload = {
+    model: "piapi/kling/text-to-video",
+    temperature: 1,
+    top_p: 1,
+    frequency_penalty: 0,
+    presence_penalty: 0,
+    n: 1,
+    stream: false,
+    messages: [
+      {
+        role: "user",
+        content: JSON.stringify({
+          prompt: _videoPrompt,
+          image_url: _imageUrl,
+          duration: 5,
+          mode: "std",
+          aspect_ratio: "16:9",
+          version: "1.6"
+        })
+      }
+    ]
+  };
+  return await heliconeLogger.logRequest(
+    heliconePayload,
+    async (resultRecorder) => {
+      const waitTime = Math.floor(Math.random() * 10) + 1;
+      await new Promise((resolve) => setTimeout(resolve, waitTime * 1000));
+      if (Math.random() < 0.0) {
+        const error = new Error("Dummy video generation failed due to random error.");
+        resultRecorder.appendResults({ error: error.message });
+        throw error;
+      }
+      const url =
+        DUMMY_VIDEO_URLS[Number(id)] ??
+        DUMMY_VIDEO_URLS[Math.floor(Math.random() * DUMMY_VIDEO_URLS.length)] ??
+        "https://download.samplelib.com/mp4/sample-10s.mp4";
+      resultRecorder.appendResults({ url });
+      return url;
+    }
+  );
 }

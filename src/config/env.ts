@@ -9,5 +9,6 @@ export const RUNWAY_API_KEY = process.env.RUNWAY_API_KEY!;
 export const TT_API_KEY = process.env.TT_API_KEY!;
 export const FAL_KEY = process.env.FAL_KEY!;
 export const PIAPI_KEY = process.env.PIAPI_KEY!;
+export const HELICONE_API_KEY = process.env.HELICONE_API_KEY!;
 
 export const IS_DUMMY = process.env.IS_DUMMY === "true";
