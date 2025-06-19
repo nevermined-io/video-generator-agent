@@ -33,7 +33,7 @@ async function run(data: any) {
     }
 
     if (!step.input_artifacts.length) {
-      step.input_artifacts = [{ inference_type: "text2video" }];
+      step.input_artifacts = [{ inference_type: "text2image" }];
     }
 
     const [{ inference_type: inferenceType, ...inputs }] = step.input_artifacts;
@@ -66,10 +66,10 @@ async function run(data: any) {
     switch (inferenceType) {
       case "text2image":
       case "image2image":
-        cost = 1;
+        cost = 0;
         break;
       case "text2video":
-        cost = 5;
+        cost = 0;
         break;
     }
 
