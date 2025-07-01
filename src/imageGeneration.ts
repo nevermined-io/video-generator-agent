@@ -12,6 +12,27 @@ import { HELICONE_API_KEY } from "./config/env";
 import { generateDeterministicAgentId, generateSessionId, logSessionInfo } from "./utils/utils";
 
 /**
+ * Helper function to calculate image size in pixels from width and height
+ * @param width - Image width in pixels
+ * @param height - Image height in pixels
+ * @returns Size in pixels (width * height)
+ */
+function calculatePixels(width: number, height: number): number {
+  return width * height;
+}
+
+/**
+ * Helper function to get pixels from image object
+ * @param image - Image object with width and height properties
+ * @returns Size in pixels
+ */
+function getImagePixels(image: { width?: number; height?: number }): number {
+  const width = image.width || 1024; // Default to 1024 if undefined
+  const height = image.height || 576; // Default to 576 if undefined
+  return calculatePixels(width, height);
+}
+
+/**
  * Generates an image from a text prompt using the Fal.ai API.
  *
  * @param prompt {string} - The text prompt for image generation.
@@ -19,38 +40,123 @@ import { generateDeterministicAgentId, generateSessionId, logSessionInfo } from 
  * @throws {Error} - If the image generation fails or no image is returned.
  */
 export async function text2image(prompt: string): Promise<string> {
-  try {
-    logger.info(`Generating image with text2image: ${prompt}`);
-    const result = await fal.subscribe("fal-ai/flux/schnell", {
-      input: {
-        prompt: prompt,
-        image_size: "landscape_16_9",
-        num_inference_steps: 4,
-        num_images: 1,
-        enable_safety_checker: true,
-      },
-      logs: true,
-      onQueueUpdate: (update) => {
-        if (update.status === "IN_PROGRESS") {
-          update.logs.map((log) => log.message).forEach(console.log);
-        }
-      },
-    });
+  const agentId = generateDeterministicAgentId();
+  const sessionId = generateSessionId();
+  logSessionInfo(agentId, sessionId, 'ImageGeneratorAgent');
+  
+  const heliconeLogger = new HeliconeManualLogger({
+    apiKey: HELICONE_API_KEY,
+    headers: {
+      "Helicone-Property-AgentId": agentId,
+      "Helicone-Property-SessionId": sessionId,
+    },
+  });
 
-    if (
-      result &&
-      result.data &&
-      result.data.images &&
-      result.data.images.length > 0
-    ) {
-      return result.data.images[0].url;
-    } else {
-      throw new Error("No image URL returned from Fal.ai API.");
+  const heliconePayload = {
+    model: "fal-ai/flux-schnell/text-to-image",
+    temperature: 1,
+    top_p: 1,
+    frequency_penalty: 0,
+    presence_penalty: 0,
+    n: 1,
+    stream: false,
+    messages: [
+      {
+        role: "user",
+        content: JSON.stringify({
+          prompt: prompt,
+          image_size: "landscape_16_9",
+          num_inference_steps: 4,
+          num_images: 1,
+          enable_safety_checker: true,
+        })
+      }
+    ]
+  };
+
+  return await heliconeLogger.logRequest(
+    heliconePayload,
+    async (resultRecorder) => {
+      try {
+        logger.info(`Generating image with text2image: ${prompt}`);
+        const result = await fal.subscribe("fal-ai/flux/schnell", {
+          input: {
+            prompt: prompt,
+            image_size: "landscape_16_9",
+            num_inference_steps: 4,
+            num_images: 1,
+            enable_safety_checker: true,
+          },
+          logs: true,
+          onQueueUpdate: (update) => {
+            if (update.status === "IN_PROGRESS") {
+              update.logs.map((log) => log.message).forEach(console.log);
+            }
+          },
+        });
+
+        if (
+          result &&
+          result.data &&
+          result.data.images &&
+          result.data.images.length > 0
+        ) {
+          const imageUrl = result.data.images[0].url;
+          const image = result.data.images[0];
+          const pixels = getImagePixels(image);
+
+          console.log("images", result.data.images);
+          console.log("pixels:", pixels);
+          
+          // Create Helicone response object
+          const heliconeResponse = {
+            id: `img-${Date.now()}`,
+            object: "chat.completion",
+            created: Math.floor(Date.now() / 1000),
+            model: "fal-ai/flux-schnell/text-to-image",
+            choices: [
+              {
+                index: 0,
+                message: {
+                  role: "assistant",
+                  content: JSON.stringify({ url: imageUrl }),
+                  refusal: null,
+                  annotations: []
+                },
+                logprobs: null,
+                finish_reason: "stop"
+              }
+            ],
+            usage: {
+              prompt_tokens: 0,
+              completion_tokens: pixels,
+              total_tokens: pixels,
+              prompt_tokens_details: {
+                cached_tokens: 0,
+                audio_tokens: 0
+              },
+              completion_tokens_details: {
+                reasoning_tokens: 0,
+                audio_tokens: 0,
+                accepted_prediction_tokens: 0,
+                rejected_prediction_tokens: 0
+              }
+            },
+            service_tier: "default",
+            system_fingerprint: `fp_${Date.now()}`
+          };
+
+          resultRecorder.appendResults(heliconeResponse);
+          return imageUrl;
+        } else {
+          throw new Error("No image URL returned from Fal.ai API.");
+        }
+      } catch (error) {
+        console.error("Error generating image with text2image:", error);
+        throw error;
+      }
     }
-  } catch (error) {
-    console.error("Error generating image with text2image:", error);
-    throw error;
-  }
+  );
 }
 
 /**
@@ -69,39 +175,126 @@ export async function image2image(
   inputImageUrl: string,
   prompt: string
 ): Promise<string> {
-  try {
-    const result = await fal.subscribe("fal-ai/flux/dev/image-to-image", {
-      input: {
-        image_url: inputImageUrl,
-        prompt: prompt,
-        strength: 0.95,
-        num_inference_steps: 40,
-        guidance_scale: 5,
-        num_images: 1,
-        enable_safety_checker: true,
-      },
-      logs: true,
-      onQueueUpdate: (update) => {
-        if (update.status === "IN_PROGRESS") {
-          update.logs.map((log) => log.message).forEach(console.log);
-        }
-      },
-    });
+  const agentId = generateDeterministicAgentId();
+  const sessionId = generateSessionId();
+  logSessionInfo(agentId, sessionId, 'ImageGeneratorAgent');
+  
+  const heliconeLogger = new HeliconeManualLogger({
+    apiKey: HELICONE_API_KEY,
+    headers: {
+      "Helicone-Property-AgentId": agentId,
+      "Helicone-Property-SessionId": sessionId,
+    },
+  });
 
-    if (
-      result &&
-      result.data &&
-      result.data.images &&
-      result.data.images.length > 0
-    ) {
-      return result.data.images[0].url;
-    } else {
-      throw new Error("No image URL returned from Fal.ai API.");
+  const heliconePayload = {
+    model: "fal-ai/flux-dev/image-to-image",
+    temperature: 1,
+    top_p: 1,
+    frequency_penalty: 0,
+    presence_penalty: 0,
+    n: 1,
+    stream: false,
+    messages: [
+      {
+        role: "user",
+        content: JSON.stringify({
+          image_url: inputImageUrl,
+          prompt: prompt,
+          strength: 0.95,
+          num_inference_steps: 40,
+          guidance_scale: 5,
+          num_images: 1,
+          enable_safety_checker: true,
+        })
+      }
+    ]
+  };
+
+  return await heliconeLogger.logRequest(
+    heliconePayload,
+    async (resultRecorder) => {
+      try {
+        const result = await fal.subscribe("fal-ai/flux/dev/image-to-image", {
+          input: {
+            image_url: inputImageUrl,
+            prompt: prompt,
+            strength: 0.95,
+            num_inference_steps: 40,
+            guidance_scale: 5,
+            num_images: 1,
+            enable_safety_checker: true,
+          },
+          logs: true,
+          onQueueUpdate: (update) => {
+            if (update.status === "IN_PROGRESS") {
+              update.logs.map((log) => log.message).forEach(console.log);
+            }
+          },
+        });
+
+        if (
+          result &&
+          result.data &&
+          result.data.images &&
+          result.data.images.length > 0
+        ) {
+          const imageUrl = result.data.images[0].url;
+          const image = result.data.images[0];
+          const pixels = getImagePixels(image);
+          
+          console.log("images", result.data.images);
+          console.log("pixels:", pixels);
+
+          // Create Helicone response object
+          const heliconeResponse = {
+            id: `img2img-${Date.now()}`,
+            object: "chat.completion",
+            created: Math.floor(Date.now() / 1000),
+            model: "fal-ai/flux-dev/image-to-image",
+            choices: [
+              {
+                index: 0,
+                message: {
+                  role: "assistant",
+                  content: JSON.stringify({ url: imageUrl }),
+                  refusal: null,
+                  annotations: []
+                },
+                logprobs: null,
+                finish_reason: "stop"
+              }
+            ],
+            usage: {
+              prompt_tokens: 0,
+              completion_tokens: pixels,
+              total_tokens: pixels,
+              prompt_tokens_details: {
+                cached_tokens: 0,
+                audio_tokens: 0
+              },
+              completion_tokens_details: {
+                reasoning_tokens: 0,
+                audio_tokens: 0,
+                accepted_prediction_tokens: 0,
+                rejected_prediction_tokens: 0
+              }
+            },
+            service_tier: "default",
+            system_fingerprint: `fp_${Date.now()}`
+          };
+
+          resultRecorder.appendResults(heliconeResponse);
+          return imageUrl;
+        } else {
+          throw new Error("No image URL returned from Fal.ai API.");
+        }
+      } catch (error) {
+        console.error("Error generating image with image2image:", error);
+        throw error;
+      }
     }
-  } catch (error) {
-    console.error("Error generating image with image2image:", error);
-    throw error;
-  }
+  );
 }
 
 /**
@@ -172,7 +365,50 @@ export async function text2imageDummy(
       const url =
         DUMMY_IMAGE_URLS[id] ??
         "https://v3.fal.media/files/koala/9cnEfODPJLdoKLiM2_pND.png";
-      resultRecorder.appendResults({ url });
+      
+      // Calculate pixels for default dimensions (1024x576)
+      const pixels = calculatePixels(1024, 576);
+      console.log("pixels:", pixels);
+      
+      // Create Helicone response object
+      const heliconeResponse = {
+        id: `dummy-img-${Date.now()}`,
+        object: "chat.completion",
+        created: Math.floor(Date.now() / 1000),
+        model: "fal-ai/flux-schnell/text-to-image",
+        choices: [
+          {
+            index: 0,
+            message: {
+              role: "assistant",
+              content: JSON.stringify({ url }),
+              refusal: null,
+              annotations: []
+            },
+            logprobs: null,
+            finish_reason: "stop"
+          }
+        ],
+        usage: {
+          prompt_tokens: 0,
+          completion_tokens: pixels,
+          total_tokens: pixels,
+          prompt_tokens_details: {
+            cached_tokens: 0,
+            audio_tokens: 0
+          },
+          completion_tokens_details: {
+            reasoning_tokens: 0,
+            audio_tokens: 0,
+            accepted_prediction_tokens: 0,
+            rejected_prediction_tokens: 0
+          }
+        },
+        service_tier: "default",
+        system_fingerprint: `fp_${Date.now()}`
+      };
+
+      resultRecorder.appendResults(heliconeResponse);
       return url;
     }
   );
@@ -199,7 +435,7 @@ export async function image2imageDummy(
     },
   });
   const heliconePayload = {
-    model: "fal-ai/flux-schnell/image-to-image",
+    model: "fal-ai/flux-dev/image-to-image",
     temperature: 1,
     top_p: 1,
     frequency_penalty: 0,
@@ -234,7 +470,50 @@ export async function image2imageDummy(
         throw error;
       }
       const url = "https://v3.fal.media/files/kangaroo/YyGP6e4eq7dayC6TzdWfA.png";
-      resultRecorder.appendResults({ url });
+      
+      // Calculate pixels for default dimensions (1024x576)
+      const pixels = calculatePixels(1024, 576);
+      console.log("pixels:", pixels);
+      
+      // Create Helicone response object
+      const heliconeResponse = {
+        id: `dummy-img2img-${Date.now()}`,
+        object: "chat.completion",
+        created: Math.floor(Date.now() / 1000),
+        model: "fal-ai/flux-dev/image-to-image",
+        choices: [
+          {
+            index: 0,
+            message: {
+              role: "assistant",
+              content: JSON.stringify({ url }),
+              refusal: null,
+              annotations: []
+            },
+            logprobs: null,
+            finish_reason: "stop"
+          }
+        ],
+        usage: {
+          prompt_tokens: 0,
+          completion_tokens: pixels,
+          total_tokens: pixels,
+          prompt_tokens_details: {
+            cached_tokens: 0,
+            audio_tokens: 0
+          },
+          completion_tokens_details: {
+            reasoning_tokens: 0,
+            audio_tokens: 0,
+            accepted_prediction_tokens: 0,
+            rejected_prediction_tokens: 0
+          }
+        },
+        service_tier: "default",
+        system_fingerprint: `fp_${Date.now()}`
+      };
+
+      resultRecorder.appendResults(heliconeResponse);
       return url;
     }
   );

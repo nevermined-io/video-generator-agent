@@ -23,6 +23,7 @@ const logger = pino(pretty({ sync: true }));
  */
 async function createVideoTask(
   prompt: string,
+  //@ts-ignore
   imageUrls: string[],
   duration: number = 5
 ): Promise<any> {
@@ -42,7 +43,7 @@ async function createVideoTask(
       version: "1.6",
     },
     config: {
-      service_mode: "public",
+      service_mode: "",
       webhook_config: {
         endpoint: "",
         secret: "",
@@ -123,6 +124,18 @@ async function getTask(taskId: string): Promise<any> {
 }
 
 /**
+ * Generates the model name based on mode, duration, and version.
+ * 
+ * @param mode - The mode (std or pro)
+ * @param duration - The duration in seconds (5 or 10)
+ * @param version - The version (1.0, 1.5, 1.6, 2.0, 2.1)
+ * @returns {string} - The formatted model name
+ */
+function generateModelName(mode: string, duration: number, version: string): string {
+  return `piapi/kling-v${version}/text-to-video/${mode}-${duration}s`;
+}
+
+/**
  * Main function to generate a video from a text prompt and a list of images using PiAPI.
  *
  * @param imageUrls - List of reference image URLs.
@@ -134,32 +147,119 @@ export async function text2video(
   prompt: string,
   duration: number = 5
 ): Promise<string> {
-  try {
-    // 1) Create a task by sending the prompt and the image URLs.
-    const result = await createVideoTask(prompt, imageUrls, duration);
+  const agentId = generateDeterministicAgentId();
+  const sessionId = generateSessionId();
+  logSessionInfo(agentId, sessionId, 'VideoGeneratorAgent');
+  
+  const heliconeLogger = new HeliconeManualLogger({
+    apiKey: HELICONE_API_KEY,
+    headers: {
+      "Helicone-Property-AgentId": agentId,
+      "Helicone-Property-SessionId": sessionId,
+    },
+  });
 
-    // If PiAPI works asynchronously and returns a task_id, poll for completion:
-    if (result?.data?.task_id) {
-      // 2) Wait for the task to complete.
-      const finalTask = await waitForTaskCompletion(result.data.task_id);
-      // Extract and return the video URL (assuming it is located in finalTask.output.works[0].video)
-      if (
-        finalTask.output &&
-        finalTask.output.works &&
-        finalTask.output.works.length > 0
-      ) {
-        const video = finalTask.output.works[0].video;
-        return video.resource_without_watermark || video.resource;
-      } else {
-        throw new Error("Video URL not found in the final response.");
+  const mode = "std"; // You can make this configurable if needed
+  const modelName = generateModelName(mode, duration, "1.6");
+
+  const heliconePayload = {
+    model: modelName,
+    temperature: 1,
+    top_p: 1,
+    frequency_penalty: 0,
+    presence_penalty: 0,
+    n: 1,
+    stream: false,
+    messages: [
+      {
+        role: "user",
+        content: JSON.stringify({
+          prompt: prompt,
+          image_urls: imageUrls,
+          duration: duration,
+          mode: mode,
+          aspect_ratio: "16:9",
+          version: "1.6"
+        })
       }
-    } else {
-      throw new Error("task_id not received from PiAPI.");
+    ]
+  };
+
+  return await heliconeLogger.logRequest(
+    heliconePayload,
+    async (resultRecorder) => {
+      try {
+        // 1) Create a task by sending the prompt and the image URLs.
+        const result = await createVideoTask(prompt, imageUrls, duration);
+
+        // If PiAPI works asynchronously and returns a task_id, poll for completion:
+        if (result?.data?.task_id) {
+          // 2) Wait for the task to complete.
+          const finalTask = await waitForTaskCompletion(result.data.task_id);
+          // Extract and return the video URL (assuming it is located in finalTask.output.works[0].video)
+          if (
+            finalTask.output &&
+            finalTask.output.works &&
+            finalTask.output.works.length > 0
+          ) {
+            const video = finalTask.output.works[0].video;
+            const videoUrl = video.resource_without_watermark || video.resource;
+
+            // NOTE: TEMP
+            console.log("finalTask", finalTask);
+            
+            // Create Helicone response object
+            const heliconeResponse = {
+              id: `video-${Date.now()}`,
+              object: "chat.completion",
+              created: Math.floor(Date.now() / 1000),
+              model: modelName,
+              choices: [
+                {
+                  index: 0,
+                  message: {
+                    role: "assistant",
+                    content: JSON.stringify({ url: videoUrl }),
+                    refusal: null,
+                    annotations: []
+                  },
+                  logprobs: null,
+                  finish_reason: "stop"
+                }
+              ],
+              usage: {
+                prompt_tokens: 0,
+                completion_tokens: 1,
+                total_tokens: 1,
+                prompt_tokens_details: {
+                  cached_tokens: 0,
+                  audio_tokens: 0
+                },
+                completion_tokens_details: {
+                  reasoning_tokens: 0,
+                  audio_tokens: 0,
+                  accepted_prediction_tokens: 0,
+                  rejected_prediction_tokens: 0
+                }
+              },
+              service_tier: "default",
+              system_fingerprint: `fp_${Date.now()}`
+            };
+
+            resultRecorder.appendResults(heliconeResponse);
+            return videoUrl;
+          } else {
+            throw new Error("Video URL not found in the final response.");
+          }
+        } else {
+          throw new Error("task_id not received from PiAPI.");
+        }
+      } catch (error) {
+        logger.error(`Error in text2video: ${JSON.stringify(error)}`);
+        throw error;
+      }
     }
-  } catch (error) {
-    logger.error(`Error in text2video: ${JSON.stringify(error)}`);
-    throw error;
-  }
+  );
 }
 
 /**
@@ -196,8 +296,13 @@ export async function text2videoDummy(
       "Helicone-Property-SessionId": sessionId,
     },
   });
+  
+  const mode = "std"; // You can make this configurable if needed
+  const duration = 5;
+  const modelName = generateModelName(mode, duration, "1.6");
+  
   const heliconePayload = {
-    model: "piapi/kling/text-to-video",
+    model: modelName,
     temperature: 1,
     top_p: 1,
     frequency_penalty: 0,
@@ -210,8 +315,8 @@ export async function text2videoDummy(
         content: JSON.stringify({
           prompt: _videoPrompt,
           image_url: _imageUrl,
-          duration: 5,
-          mode: "std",
+          duration: duration,
+          mode: mode,
           aspect_ratio: "16:9",
           version: "1.6"
         })
@@ -232,7 +337,46 @@ export async function text2videoDummy(
         DUMMY_VIDEO_URLS[Number(id)] ??
         DUMMY_VIDEO_URLS[Math.floor(Math.random() * DUMMY_VIDEO_URLS.length)] ??
         "https://download.samplelib.com/mp4/sample-10s.mp4";
-      resultRecorder.appendResults({ url });
+      
+      // Create Helicone response object
+      const heliconeResponse = {
+        id: `dummy-video-${Date.now()}`,
+        object: "chat.completion",
+        created: Math.floor(Date.now() / 1000),
+        model: modelName,
+        choices: [
+          {
+            index: 0,
+            message: {
+              role: "assistant",
+              content: JSON.stringify({ url }),
+              refusal: null,
+              annotations: []
+            },
+            logprobs: null,
+            finish_reason: "stop"
+          }
+        ],
+        usage: {
+          prompt_tokens: 0,
+          completion_tokens: 1,
+          total_tokens: 1,
+          prompt_tokens_details: {
+            cached_tokens: 0,
+            audio_tokens: 0
+          },
+          completion_tokens_details: {
+            reasoning_tokens: 0,
+            audio_tokens: 0,
+            accepted_prediction_tokens: 0,
+            rejected_prediction_tokens: 0
+          }
+        },
+        service_tier: "default",
+        system_fingerprint: `fp_${Date.now()}`
+      };
+
+      resultRecorder.appendResults(heliconeResponse);
       return url;
     }
   );
