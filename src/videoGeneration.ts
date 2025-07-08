@@ -7,9 +7,7 @@ import axios from "axios";
 import { PIAPI_KEY } from "./config/env";
 import pino from "pino";
 import pretty from "pino-pretty";
-import { HeliconeManualLogger } from "@helicone/helpers";
-import { HELICONE_API_KEY } from "./config/env";
-import { generateDeterministicAgentId, generateSessionId, logSessionInfo } from "./utils/utils";
+import { withHeliconeLogging, calculateVideoUsage } from "./utils/heliconeWrapper";
 
 // Initialize logger
 const logger = pino(pretty({ sync: true }));
@@ -136,6 +134,42 @@ function generateModelName(mode: string, duration: number, version: string): str
 }
 
 /**
+ * Core video generation logic without Helicone logging
+ */
+async function executeText2Video(
+  imageUrls: string[],
+  prompt: string,
+  duration: number = 5
+): Promise<string> {
+  // 1) Create a task by sending the prompt and the image URLs.
+  const result = await createVideoTask(prompt, imageUrls, duration);
+
+  // If PiAPI works asynchronously and returns a task_id, poll for completion:
+  if (result?.data?.task_id) {
+    // 2) Wait for the task to complete.
+    const finalTask = await waitForTaskCompletion(result.data.task_id);
+    // Extract and return the video URL (assuming it is located in finalTask.output.works[0].video)
+    if (
+      finalTask.output &&
+      finalTask.output.works &&
+      finalTask.output.works.length > 0
+    ) {
+      const video = finalTask.output.works[0].video;
+      const videoUrl = video.resource_without_watermark || video.resource;
+
+      // NOTE: TEMP
+      console.log("finalTask", finalTask);
+      
+      return videoUrl;
+    } else {
+      throw new Error("Video URL not found in the final response.");
+    }
+  } else {
+    throw new Error("task_id not received from PiAPI.");
+  }
+}
+
+/**
  * Main function to generate a video from a text prompt and a list of images using PiAPI.
  *
  * @param imageUrls - List of reference image URLs.
@@ -147,118 +181,26 @@ export async function text2video(
   prompt: string,
   duration: number = 5
 ): Promise<string> {
-  const agentId = generateDeterministicAgentId();
-  const sessionId = generateSessionId();
-  logSessionInfo(agentId, sessionId, 'VideoGeneratorAgent');
-  
-  const heliconeLogger = new HeliconeManualLogger({
-    apiKey: HELICONE_API_KEY,
-    headers: {
-      "Helicone-Property-AgentId": agentId,
-      "Helicone-Property-SessionId": sessionId,
-    },
-  });
-
   const mode = "std"; // You can make this configurable if needed
   const modelName = generateModelName(mode, duration, "1.6");
 
-  const heliconePayload = {
-    model: modelName,
-    temperature: 1,
-    top_p: 1,
-    frequency_penalty: 0,
-    presence_penalty: 0,
-    n: 1,
-    stream: false,
-    messages: [
-      {
-        role: "user",
-        content: JSON.stringify({
-          prompt: prompt,
-          image_urls: imageUrls,
-          duration: duration,
-          mode: mode,
-          aspect_ratio: "16:9",
-          version: "1.6"
-        })
+  return withHeliconeLogging(
+    'VideoGeneratorAgent',
+    {
+      model: modelName,
+      inputData: {
+        prompt: prompt,
+        image_urls: imageUrls,
+        duration: duration,
+        mode: mode,
+        aspect_ratio: "16:9",
+        version: "1.6"
       }
-    ]
-  };
-
-  return await heliconeLogger.logRequest(
-    heliconePayload,
-    async (resultRecorder) => {
-      try {
-        // 1) Create a task by sending the prompt and the image URLs.
-        const result = await createVideoTask(prompt, imageUrls, duration);
-
-        // If PiAPI works asynchronously and returns a task_id, poll for completion:
-        if (result?.data?.task_id) {
-          // 2) Wait for the task to complete.
-          const finalTask = await waitForTaskCompletion(result.data.task_id);
-          // Extract and return the video URL (assuming it is located in finalTask.output.works[0].video)
-          if (
-            finalTask.output &&
-            finalTask.output.works &&
-            finalTask.output.works.length > 0
-          ) {
-            const video = finalTask.output.works[0].video;
-            const videoUrl = video.resource_without_watermark || video.resource;
-
-            // NOTE: TEMP
-            console.log("finalTask", finalTask);
-            
-            // Create Helicone response object
-            const heliconeResponse = {
-              id: `video-${Date.now()}`,
-              object: "chat.completion",
-              created: Math.floor(Date.now() / 1000),
-              model: modelName,
-              choices: [
-                {
-                  index: 0,
-                  message: {
-                    role: "assistant",
-                    content: JSON.stringify({ url: videoUrl }),
-                    refusal: null,
-                    annotations: []
-                  },
-                  logprobs: null,
-                  finish_reason: "stop"
-                }
-              ],
-              usage: {
-                prompt_tokens: 0,
-                completion_tokens: 1,
-                total_tokens: 1,
-                prompt_tokens_details: {
-                  cached_tokens: 0,
-                  audio_tokens: 0
-                },
-                completion_tokens_details: {
-                  reasoning_tokens: 0,
-                  audio_tokens: 0,
-                  accepted_prediction_tokens: 0,
-                  rejected_prediction_tokens: 0
-                }
-              },
-              service_tier: "default",
-              system_fingerprint: `fp_${Date.now()}`
-            };
-
-            resultRecorder.appendResults(heliconeResponse);
-            return videoUrl;
-          } else {
-            throw new Error("Video URL not found in the final response.");
-          }
-        } else {
-          throw new Error("task_id not received from PiAPI.");
-        }
-      } catch (error) {
-        logger.error(`Error in text2video: ${JSON.stringify(error)}`);
-        throw error;
-      }
-    }
+    },
+    () => executeText2Video(imageUrls, prompt, duration),
+    (result) => result, // Identity function - return the URL as-is
+    (_result) => calculateVideoUsage(),
+    'video'
   );
 }
 
@@ -286,98 +228,41 @@ export async function text2videoDummy(
     "https://download.samplelib.com/mp4/sample-5s.mp4",
     "https://download.samplelib.com/mp4/sample-5s.mp4",
   ];
-  const agentId = generateDeterministicAgentId();
-  const sessionId = generateSessionId();
-  logSessionInfo(agentId, sessionId, 'VideoGeneratorAgent');
-  const heliconeLogger = new HeliconeManualLogger({
-    apiKey: HELICONE_API_KEY,
-    headers: {
-      "Helicone-Property-AgentId": agentId,
-      "Helicone-Property-SessionId": sessionId,
-    },
-  });
   
   const mode = "std"; // You can make this configurable if needed
   const duration = 5;
   const modelName = generateModelName(mode, duration, "1.6");
   
-  const heliconePayload = {
-    model: modelName,
-    temperature: 1,
-    top_p: 1,
-    frequency_penalty: 0,
-    presence_penalty: 0,
-    n: 1,
-    stream: false,
-    messages: [
-      {
-        role: "user",
-        content: JSON.stringify({
-          prompt: _videoPrompt,
-          image_url: _imageUrl,
-          duration: duration,
-          mode: mode,
-          aspect_ratio: "16:9",
-          version: "1.6"
-        })
+  return withHeliconeLogging(
+    'VideoGeneratorAgent',
+    {
+      model: modelName,
+      inputData: {
+        prompt: _videoPrompt,
+        image_url: _imageUrl,
+        duration: duration,
+        mode: mode,
+        aspect_ratio: "16:9",
+        version: "1.6"
       }
-    ]
-  };
-  return await heliconeLogger.logRequest(
-    heliconePayload,
-    async (resultRecorder) => {
+    },
+    async () => {
       const waitTime = Math.floor(Math.random() * 10) + 1;
       await new Promise((resolve) => setTimeout(resolve, waitTime * 1000));
+      
       if (Math.random() < 0.0) {
-        const error = new Error("Dummy video generation failed due to random error.");
-        resultRecorder.appendResults({ error: error.message });
-        throw error;
+        throw new Error("Dummy video generation failed due to random error.");
       }
+      
       const url =
         DUMMY_VIDEO_URLS[Number(id)] ??
         DUMMY_VIDEO_URLS[Math.floor(Math.random() * DUMMY_VIDEO_URLS.length)] ??
         "https://download.samplelib.com/mp4/sample-10s.mp4";
       
-      // Create Helicone response object
-      const heliconeResponse = {
-        id: `dummy-video-${Date.now()}`,
-        object: "chat.completion",
-        created: Math.floor(Date.now() / 1000),
-        model: modelName,
-        choices: [
-          {
-            index: 0,
-            message: {
-              role: "assistant",
-              content: JSON.stringify({ url }),
-              refusal: null,
-              annotations: []
-            },
-            logprobs: null,
-            finish_reason: "stop"
-          }
-        ],
-        usage: {
-          prompt_tokens: 0,
-          completion_tokens: 1,
-          total_tokens: 1,
-          prompt_tokens_details: {
-            cached_tokens: 0,
-            audio_tokens: 0
-          },
-          completion_tokens_details: {
-            reasoning_tokens: 0,
-            audio_tokens: 0,
-            accepted_prediction_tokens: 0,
-            rejected_prediction_tokens: 0
-          }
-        },
-        service_tier: "default",
-        system_fingerprint: `fp_${Date.now()}`
-      };
-
-      resultRecorder.appendResults(heliconeResponse);
       return url;
-    }
+    },
+    (result) => result, // Identity function - return the URL as-is
+    (_result) => calculateVideoUsage(),
+    'dummy-video'
   );
 }
