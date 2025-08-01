@@ -4,7 +4,7 @@
  */
 
 import { HeliconeManualLogger } from "@helicone/helpers";
-import { HELICONE_API_KEY } from "../config/env";
+import { HELICONE_API_KEY, HELICONE_BASE_LOGGING_URL, HELICONE_MANUAL_LOGGING_URL } from "../config/env";
 import { generateDeterministicAgentId, generateSessionId, logSessionInfo } from "./utils";
 
 /**
@@ -143,6 +143,7 @@ export async function withHeliconeLogging<TInternal = any, TExtracted = any>(
   
   const heliconeLogger = new HeliconeManualLogger({
     apiKey: HELICONE_API_KEY,
+    loggingEndpoint: HELICONE_MANUAL_LOGGING_URL,
     headers: {
       "Helicone-Property-AgentId": agentId,
       "Helicone-Property-SessionId": sessionId,
@@ -277,7 +278,7 @@ export function withHeliconeLangchain(
     model,
     apiKey,
     configuration: {
-      baseURL: "https://oai.helicone.ai/v1",
+      baseURL: HELICONE_BASE_LOGGING_URL,
       defaultHeaders: {
         "Helicone-Auth": `Bearer ${HELICONE_API_KEY}`,
         "Helicone-Property-AgentId": agentId,
@@ -311,7 +312,7 @@ export function withHeliconeOpenAI(
 
   return {
     apiKey,
-    baseURL: "https://oai.helicone.ai/v1",
+    baseURL: HELICONE_BASE_LOGGING_URL,
     defaultHeaders: {
       "Helicone-Auth": `Bearer ${HELICONE_API_KEY}`,
       "Helicone-Property-AgentId": agentId,
