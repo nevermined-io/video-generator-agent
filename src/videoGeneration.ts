@@ -7,6 +7,7 @@ import axios from "axios";
 import { PIAPI_KEY } from "./config/env";
 import pino from "pino";
 import pretty from "pino-pretty";
+import { withHeliconeLogging, calculateVideoUsage } from "./utils/heliconeWrapper";
 
 // Initialize logger
 const logger = pino(pretty({ sync: true }));
@@ -20,6 +21,7 @@ const logger = pino(pretty({ sync: true }));
  */
 async function createVideoTask(
   prompt: string,
+  //@ts-ignore
   imageUrls: string[],
   duration: number = 5
 ): Promise<any> {
@@ -39,7 +41,7 @@ async function createVideoTask(
       version: "1.6",
     },
     config: {
-      service_mode: "public",
+      service_mode: "",
       webhook_config: {
         endpoint: "",
         secret: "",
@@ -120,6 +122,54 @@ async function getTask(taskId: string): Promise<any> {
 }
 
 /**
+ * Generates the model name based on mode, duration, and version.
+ * 
+ * @param mode - The mode (std or pro)
+ * @param duration - The duration in seconds (5 or 10)
+ * @param version - The version (1.0, 1.5, 1.6, 2.0, 2.1)
+ * @returns {string} - The formatted model name
+ */
+function generateModelName(mode: string, duration: number, version: string): string {
+  return `piapi/kling-v${version}/text-to-video/${mode}-${duration}s`;
+}
+
+/**
+ * Core video generation logic without Helicone logging
+ */
+async function executeText2Video(
+  imageUrls: string[],
+  prompt: string,
+  duration: number = 5
+): Promise<string> {
+  // 1) Create a task by sending the prompt and the image URLs.
+  const result = await createVideoTask(prompt, imageUrls, duration);
+
+  // If PiAPI works asynchronously and returns a task_id, poll for completion:
+  if (result?.data?.task_id) {
+    // 2) Wait for the task to complete.
+    const finalTask = await waitForTaskCompletion(result.data.task_id);
+    // Extract and return the video URL (assuming it is located in finalTask.output.works[0].video)
+    if (
+      finalTask.output &&
+      finalTask.output.works &&
+      finalTask.output.works.length > 0
+    ) {
+      const video = finalTask.output.works[0].video;
+      const videoUrl = video.resource_without_watermark || video.resource;
+
+      // NOTE: TEMP
+      console.log("finalTask", finalTask);
+      
+      return videoUrl;
+    } else {
+      throw new Error("Video URL not found in the final response.");
+    }
+  } else {
+    throw new Error("task_id not received from PiAPI.");
+  }
+}
+
+/**
  * Main function to generate a video from a text prompt and a list of images using PiAPI.
  *
  * @param imageUrls - List of reference image URLs.
@@ -131,30 +181,88 @@ export async function text2video(
   prompt: string,
   duration: number = 5
 ): Promise<string> {
-  try {
-    // 1) Create a task by sending the prompt and the image URLs.
-    const result = await createVideoTask(prompt, imageUrls, duration);
+  const mode = "std"; // You can make this configurable if needed
+  const modelName = generateModelName(mode, duration, "1.6");
 
-    // If PiAPI works asynchronously and returns a task_id, poll for completion:
-    if (result?.data?.task_id) {
-      // 2) Wait for the task to complete.
-      const finalTask = await waitForTaskCompletion(result.data.task_id);
-      // Extract and return the video URL (assuming it is located in finalTask.output.works[0].video)
-      if (
-        finalTask.output &&
-        finalTask.output.works &&
-        finalTask.output.works.length > 0
-      ) {
-        const video = finalTask.output.works[0].video;
-        return video.resource_without_watermark || video.resource;
-      } else {
-        throw new Error("Video URL not found in the final response.");
+  return withHeliconeLogging(
+    'VideoGeneratorAgent',
+    {
+      model: modelName,
+      inputData: {
+        prompt: prompt,
+        image_urls: imageUrls,
+        duration: duration,
+        mode: mode,
+        aspect_ratio: "16:9",
+        version: "1.6"
       }
-    } else {
-      throw new Error("task_id not received from PiAPI.");
-    }
-  } catch (error) {
-    logger.error(`Error in text2video: ${JSON.stringify(error)}`);
-    throw error;
-  }
+    },
+    () => executeText2Video(imageUrls, prompt, duration),
+    (result) => result, // Identity function - return the URL as-is
+    (_result) => calculateVideoUsage(),
+    'video'
+  );
+}
+
+/**
+ * Dummy implementation for text-to-video generation.
+ * Uses the first image from the array.
+ * @param imageUrl - The reference image URL.
+ * @param videoPrompt - The text prompt for video generation.
+ * @param id - The ID of the video.
+ * @returns {Promise<string>} - A dummy video URL.
+ */
+export async function text2videoDummy(
+  _imageUrl: string,
+  _videoPrompt: string,
+  id: string
+): Promise<string> {
+  const DUMMY_VIDEO_URLS = [
+    "https://download.samplelib.com/mp4/sample-5s.mp4",
+    "https://download.samplelib.com/mp4/sample-5s.mp4",
+    "https://download.samplelib.com/mp4/sample-5s.mp4",
+    "https://download.samplelib.com/mp4/sample-5s.mp4",
+    "https://download.samplelib.com/mp4/sample-5s.mp4",
+    "https://download.samplelib.com/mp4/sample-5s.mp4",
+    "https://download.samplelib.com/mp4/sample-5s.mp4",
+    "https://download.samplelib.com/mp4/sample-5s.mp4",
+    "https://download.samplelib.com/mp4/sample-5s.mp4",
+  ];
+  
+  const mode = "std"; // You can make this configurable if needed
+  const duration = 5;
+  const modelName = generateModelName(mode, duration, "1.6");
+  
+  return withHeliconeLogging(
+    'VideoGeneratorAgent',
+    {
+      model: modelName,
+      inputData: {
+        prompt: _videoPrompt,
+        image_url: _imageUrl,
+        duration: duration,
+        mode: mode,
+        aspect_ratio: "16:9",
+        version: "1.6"
+      }
+    },
+    async () => {
+      const waitTime = Math.floor(Math.random() * 10) + 1;
+      await new Promise((resolve) => setTimeout(resolve, waitTime * 1000));
+      
+      if (Math.random() < 0.0) {
+        throw new Error("Dummy video generation failed due to random error.");
+      }
+      
+      const url =
+        DUMMY_VIDEO_URLS[Number(id)] ??
+        DUMMY_VIDEO_URLS[Math.floor(Math.random() * DUMMY_VIDEO_URLS.length)] ??
+        "https://download.samplelib.com/mp4/sample-10s.mp4";
+      
+      return url;
+    },
+    (result) => result, // Identity function - return the URL as-is
+    (_result) => calculateVideoUsage(),
+    'dummy-video'
+  );
 }
